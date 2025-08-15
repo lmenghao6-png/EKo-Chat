@@ -1,0 +1,184 @@
+AI 聚合问答（Aggregator Chat）PRD
+
+一、概述
+- 产品名称: AI 聚合问答（Aggregator Chat）
+- 背景: 市场上多家大模型表现各有优劣；单一模型不稳定且受限。通过聚合多家模型、引入投票/对比选优机制，提高答案质量与一致性。
+- 目标
+  - 提升答案质量: 通过多模型候选 + 投票/算法选优，显著优于单模型。
+  - 降低不稳定波动: 用加权/仲裁策略控制坏答复。
+  - 统一交互体验: 前端交互与 GPT 网页版一致，降低学习成本。
+- 核心指标(KPI)
+  - 用户满意度（投票正向率 ≥ 70%）
+  - 平均响应时延（P95 ≤ 6s；超时后回退最佳可用答案）
+  - 成本/每次对话（可控区间，MVP ≤ ¥0.02/问答）
+  - 有效答案率（无违禁/空答 ≥ 99%）
+
+二、范围与非目标
+- 范围: 聊天式问答、聚合多模型、投票与自动选优、对话历史、基础管理后台（模型配置/成本监控/内容审核）。
+- 非目标（MVP 外）: 多模态生成（图片/音频）、复杂插件生态、企业SSO、移动端原生 App。
+
+三、用户与场景
+- 用户画像
+  - 普通用户：日常问答、写作、代码辅助
+  - 高级用户：对比模型答案，愿意投票贡献改进
+  - 管理员：配置模型与配额、监控成本与内容安全
+- 关键场景
+  - 用户提出问题 → 系统并发调用多家模型 → 聚合展示最佳答案（同时可展开“查看其他候选”）→ 用户点赞/点踩/投票 → 系统持续优化权重
+  - 发生响应超时/报错 → 自动降级回退到备用模型或缓存答案
+
+四、术语定义
+- 候选答案（Candidate）: 单个模型返回的一次回答
+- 选优（Selection）: 从多个候选中确定呈现给用户的最终答案
+- 投票（Vote）: 用户对候选的偏好标记（点赞/点踩/二选一/多选排序）
+
+五、业务流程（MVP）
+- 用户输入问题 → 创建会话消息 → 下发到“编排层”
+- 编排层并发请求各 Provider（OpenAI/Claude/Gemini/本地等），统一超时（如 5s）
+- 收集候选 → 质量过滤（毒性/长度/重复/空答）→ 初次排序（规则/权重/历史表现）
+- 如果开启“即时投票模式”：展示最终答案 + “查看其他候选与投票”
+- 用户投票后，更新候选权重与模型质量分（用于后续排序）
+- 持久化对话、候选、投票、成本与日志
+
+六、功能需求
+- 账户与权限
+  - 邮箱登录/魔法链接；管理员角色
+- 聊天与会话
+  - 支持多会话、重命名、删除、导出；流式输出；重试/继续生成
+- 模型聚合编排
+  - Provider 适配器接口；并发数与超时；重试与熔断；成本采集；缓存（问答+embedding）
+- 投票机制
+  - MVP：点赞/点踩（对最终答案）+ 对比投票（用户可展开候选进行二选一）
+  - 反作弊：同用户/同问题重复投票去重；风控限流
+- 选优策略
+  - 质量过滤 → 加权排序（权重=模型先验权重×历史胜率×近几轮质量分）→ Tie-break（时延更短/更低成本优先）
+- 历史与分享
+  - 保存上下文；单条消息链接分享（可控隐私）
+- 管理后台
+  - 模型配置、密钥管理、配额与成本看板、日志检索、内容审核结果
+- 安全合规
+  - 敏感内容检测与拦截；提示词与输出的审计日志；隐私与数据保留策略
+
+七、非功能需求
+- 性能: 并发 100 QPS；P95 ≤ 6s；单 Provider 超时 ≤ 5s，整体回包 ≤ 6s
+- 可用性: 99.9% 月度可用；熔断降级到稳定模型/缓存
+- 成本: 可按模型与会话限额；单答成本告警阈值
+- 可观测性: 指标（成功率/时延/成本）、日志（请求级）、追踪（trace）
+
+八、UI/UX（对标 GPT 网页版）
+- 主界面
+  - 左侧会话栏：新建、搜索、重命名、删除
+  - 右侧对话区：气泡式消息、流式打字、复制/重试/继续、消息操作菜单
+  - 底部输入区：多行输入、Enter 发送、Shift+Enter 换行、附件入口（MVP 可置后）
+  - 顶部模型选择器：默认“自动（聚合）”，可选指定模型
+- 候选与投票
+  - 默认只显示“最终答案”；提供“查看其他候选”抽屉（展示模型名/耗时/成本/投票按钮）
+  - 对比投票：单问题下随机抽 2 个候选进行二选一
+- 状态与反馈
+  - 加载动画、错误提示（可重试）、成本提示（可选）
+- 主题与可访问性
+  - 深色/浅色；键盘快捷键；响应式
+
+九、API 设计（示例）
+- 创建消息并聚合
+  - POST /api/chat/send
+  - 入参（JSON）
+    {
+      "conversationId": "string|null",
+      "message": "string",
+      "mode": "aggregate|single",
+      "model": "auto|gpt-4o|claude-3.5|gemini-1.5",
+      "stream": true
+    }
+  - 出参（JSON，流式/非流式统一）
+    {
+      "conversationId": "string",
+      "finalAnswer": { "id": "cand_xxx", "text": "string", "provider": "openai", "latencyMs": 2100, "cost": 0.002 },
+      "candidatesMeta": [
+        { "id": "cand_xxx", "provider": "openai", "latencyMs": 2100, "cost": 0.002 },
+        { "id": "cand_yyy", "provider": "anthropic", "latencyMs": 2500, "cost": 0.003 }
+      ]
+    }
+- 获取候选列表
+  - GET /api/chat/{messageId}/candidates
+- 提交投票
+  - POST /api/vote（JSON）
+    { "messageId": "msg_123", "type": "like|dislike|pairwise", "candidateIds": ["cand_xxx","cand_yyy"], "winner": "cand_xxx" }
+- 管理接口（示例）
+  - GET /api/admin/providers、POST /api/admin/providers
+  - GET /api/admin/metrics?from=&to=
+
+十、数据模型（示例）
+{
+  "User": { "id": "u1", "email": "a@b.com", "role": "user|admin", "createdAt": "ts" },
+  "Conversation": { "id": "c1", "userId": "u1", "title": "string", "createdAt": "ts" },
+  "Message": { "id": "m1", "conversationId": "c1", "role": "user|assistant|system", "content": "text", "finalCandidateId": "cand_x" },
+  "CandidateAnswer": {
+    "id": "cand_x", "messageId": "m1", "provider": "openai",
+    "text": "text", "latencyMs": 2100, "cost": 0.002,
+    "qualityFlags": { "toxic": false, "empty": false, "tooShort": false },
+    "score": 0.65
+  },
+  "Vote": { "id": "v1", "messageId": "m1", "userId": "u1", "type": "like|dislike|pairwise", "data": { "winner": "cand_x", "loser": "cand_y" }, "createdAt": "ts" },
+  "ProviderConfig": { "id": "p1", "name": "openai", "models": ["gpt-4o"], "apiKeyRef": "kms://...", "timeoutMs": 5000, "weight": 1.0, "enabled": true },
+  "CostLog": { "id": "cost_1", "messageId": "m1", "provider": "openai", "inputTokens": 123, "outputTokens": 456, "cost": 0.002 }
+}
+
+十一、选优与投票算法（MVP）
+- 候选过滤
+  - 规则：去空答、去重复、长度阈值、敏感内容拦截
+- 评分与排序
+  - 评分 = (w_model × winRate_30d × q_recent)；初始 w_model 由管理员设定
+  - 平分时：优先低时延、低成本者
+- 投票更新
+  - 点赞/点踩：更新候选 q_recent；二选一：胜者 Elo +K，负者 Elo −K（K=16）
+- 回退策略
+  - 超时/失败：使用次优候选；若均失败则返回“抱歉，系统繁忙”并记录报警
+
+十二、Provider 集成清单
+- MVP: OpenAI（gpt-4o-mini）、Anthropic（Claude 3.5）、Google（Gemini 1.5）
+- 适配器接口
+  interface LLMProvider {
+    name: string;
+    send(prompt: Prompt, options: {timeoutMs: number, stream?: boolean}): Promise<{text: string, tokens: {in: number, out: number}, latencyMs: number, cost: number}>
+  }
+- 并发与限流: 连接池、指数退避、熔断；每 Provider 独立限流与指标
+
+十三、部署与架构
+- 前端: Next.js/React，流式 SSE；GPT风格组件
+- 后端: Node.js/TypeScript（或 Python），编排服务 + Provider 适配层
+- 存储: Postgres（结构化数据）+ Redis（队列/缓存）+ 对象存储（导出）
+- 监控: Prometheus + Grafana；集中日志；错误报警
+
+十四、测试与验收
+- 功能验收
+  - 并发调用≥3个 Provider，5s 超时；至少返回1个候选
+  - 能正确展示最终答案并可展开查看候选
+  - 投票数据可写入并影响后续排序（验证 Elo/权重变化）
+- 质量验收
+  - 敏感输出拦截率 ≥ 99%
+  - P95 响应时间 ≤ 6s；异常回退成功率 ≥ 99%
+- 成本验收
+  - 统计每问答成本；支持按 Provider、模型、时间维度聚合
+- UI 验收
+  - 与 GPT 网页版交互一致：流式、重试、复制、快捷键、深浅色
+
+十五、里程碑（建议）
+- M1（1-2周）: 单模型 + GPT 风格前端 + 流式
+- M2（1周）: 多模型并发 + 候选展示 + 规则选优
+- M3（1周）: 投票（点赞/对比）+ 权重更新 + 管理后台
+- M4（1周）: 成本看板 + 安全审计 + 熔断降级
+- M5（持续）: 算法迭代（Elo/加权/学习到排序）
+
+十六、风险与对策
+- 成本失控: 限额+低价模型优先+缓存
+- 响应波动: 并发+超时+快速回退
+- 投票滥用: 登录限制、同题去重、风控与限频
+- 合规风险: 敏感检测、审计留痕、隐私脱敏、可删除数据
+
+附：接口与前端交互要点（可直接给工程用）
+- 流式 SSE 事件：
+  - token：单次增量；done：完成；candidatesReady：候选元信息可取
+- 前端状态机：
+  - 输入中 → 请求中（展示占位）→ 流式输出 → 完成（展示“查看其他候选”与投票区）
+- 错误码约定：
+  - PROVIDER_TIMEOUT、PROVIDER_RATE_LIMIT、CONTENT_BLOCKED、NO_CANDIDATE_AVAILABLE
