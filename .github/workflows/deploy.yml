@@ -10,17 +10,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: SSH deploy and update
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          password: ${{ secrets.SSH_PASSWORD }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            set -euxo pipefail
-            export CI=false
-            export NEXT_TELEMETRY_DISABLED=1
-            set -euxo pipefail
+  uses: appleboy/ssh-action@v1.0.3
+  with:
+    host: ${{ secrets.SSH_HOST }}
+    username: ${{ secrets.SSH_USER }}
+    password: ${{ secrets.SSH_PASSWORD }}
+    port: ${{ secrets.SSH_PORT }}
+    command_timeout: 45m
+    script: |
+      export CI=false
+      export NEXT_TELEMETRY_DISABLED=1
+      set -euxo pipefail
+      # 下面是更新脚本内容...
             # 写入/更新一键更新脚本
             cat >/root/thinking-update.sh <<'EOS'
             #!/usr/bin/env bash
