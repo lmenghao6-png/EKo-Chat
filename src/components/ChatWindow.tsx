@@ -11,7 +11,8 @@ const ChatWindow = () => {
   const { 
     activeConversationId, 
     getConversationById, 
-    sendMessage 
+    sendMessage,
+    isLoading
   } = useChat();
 
   const activeConversation = activeConversationId 
@@ -77,13 +78,13 @@ const ChatWindow = () => {
             </div>
           ) : (
             activeConversation?.messages.map((msg) => (
-              <Message key={msg.id} role={msg.role} content={msg.content} isStreaming={msg.isStreaming} />
+              <Message key={msg.id} role={msg.role} content={msg.content} />
             ))
           )}
          <div ref={messagesEndRef} />
         </div>
       </div>
-      <ChatInput onSendMessage={handleSendMessage} isInitial={isInitialConversation} />
+      <ChatInput onSendMessage={handleSendMessage} isInitial={isInitialConversation} isLoading={isLoading} />
     </div>
   );
 };

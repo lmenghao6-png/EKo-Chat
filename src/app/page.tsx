@@ -5,6 +5,7 @@ import Link from "next/link";
 import { MountainIcon, Bot, CheckCircle, Zap, MoveRight, HelpCircle, GitMerge, ListChecks, ArrowUpCircle, User, Code, Settings, Check, Twitter, Github, Linkedin, Star, ChevronDown } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import { motion, AnimatePresence } from "framer-motion";
+import type { Variants } from "framer-motion";
 
 const sections = ["hero", "how-it-works", "features", "for-whom", "tech-stack", "testimonials", "pricing", "faq", "story"];
 
@@ -139,12 +140,13 @@ const LandingPage = () => {
     }),
   };
 
-  const contentVariants = {
+  const easeCubic: [number, number, number, number] = [0.4, 0.0, 0.2, 1];
+  const contentVariants: Variants = {
       hidden: { opacity: 0, y: 50 },
       visible: {
         opacity: 1,
         y: 0,
-        transition: { duration: 0.7, delay: 0.5, ease: [0.4, 0.0, 0.2, 1] }
+        transition: { duration: 0.7, delay: 0.5, ease: easeCubic },
       },
   };
 

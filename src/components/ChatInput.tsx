@@ -6,9 +6,10 @@ import { SendHorizonal, Paperclip, Image as ImageIcon } from 'lucide-react';
 interface ChatInputProps {
   onSendMessage: (content: string) => void;
   isInitial?: boolean;
+  isLoading?: boolean;
 }
 
-const ChatInput = ({ onSendMessage, isInitial = false }: ChatInputProps) => {
+const ChatInput = ({ onSendMessage, isInitial = false, isLoading = false }: ChatInputProps) => {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -55,11 +56,12 @@ const ChatInput = ({ onSendMessage, isInitial = false }: ChatInputProps) => {
           placeholder="向 EKo-Aggregator Chat 发送消息..."
           className="w-full h-auto p-2 bg-transparent resize-none focus:outline-none max-h-48"
           rows={1}
+          disabled={isLoading}
         />
         <button
           onClick={sendMessage}
           className="p-3 ml-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed transition-colors"
-          disabled={!input.trim()}
+          disabled={!input.trim() || isLoading}
         >
           <SendHorizonal size={20} />
         </button>

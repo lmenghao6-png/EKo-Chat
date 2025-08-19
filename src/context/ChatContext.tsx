@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { createContext, useContext, useState, ReactNode } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
 // 类型定义
@@ -8,7 +8,6 @@ interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  isStreaming?: boolean;
 }
 
 interface Conversation {
@@ -20,49 +19,30 @@ interface Conversation {
 interface ChatContextType {
   conversations: Conversation[];
   activeConversationId: string | null;
-  setActiveConversationId: (id: string) => void;
+  setActiveConversationId: (id: string | null) => void;
   getConversationById: (id: string) => Conversation | undefined;
   createNewConversation: () => void;
   deleteConversation: (id: string) => void;
   updateConversationTitle: (id: string, title: string) => void;
-  sendMessage: (conversationId: string, content: string) => void;
+  sendMessage: (conversationId: string | null, content: string) => Promise<void>;
+  isLoading: boolean;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
-// 初始模拟数据
-const initialConversations: Conversation[] = [
-  {
-    id: '1',
-    title: '你好',
-    messages: [
-      { id: uuidv4(), role: 'user', content: '你好' },
-      { id: uuidv4(), role: 'assistant', content: '你好！有什么可以帮助你的吗？' },
-    ],
-  },
-  {
-    id: '2',
-    title: '帮我写一个快速排序算法',
-    messages: [
-        { id: uuidv4(), role: 'user', content: '帮我写一个快速排序算法' },
-        { id: uuidv4(), role: 'assistant', content: '当然，这是用 TypeScript 实现的快速排序算法...' },
-    ],
-  },
-];
-
 export const ChatProvider = ({ children }: { children: ReactNode }) => {
-  const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(
-    initialConversations.length > 0 ? initialConversations[0].id : null
-  );
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const getConversationById = (id: string) => {
     return conversations.find((c) => c.id === id);
   };
 
   const createNewConversation = () => {
+    // 创建一个临时的本地会话，但还不设置active，等第一条消息发送后再正式创建
     const newConversation: Conversation = {
-      id: uuidv4(),
+      id: `local-${uuidv4()}`, // 标记为本地临时ID
       title: '新的对话',
       messages: [],
     };
@@ -83,60 +63,83 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     );
   };
 
-  const sendMessage = (conversationId: string, content: string) => {
+  const sendMessage = async (conversationId: string | null, content: string) => {
+    setIsLoading(true);
     const userMessage: Message = { id: uuidv4(), role: 'user', content };
-    
-    // 1. 先添加用户消息
-    setConversations(prev => 
-      prev.map(c => 
-        c.id === conversationId ? { ...c, messages: [...c.messages, userMessage] } : c
-      )
-    );
 
-    // 2. 添加一个空的 AI 消息用于流式输出
-    const aiMessageId = uuidv4();
-    const aiMessage: Message = { id: aiMessageId, role: 'assistant', content: '', isStreaming: true };
-    setConversations(prev => 
-      prev.map(c => 
-        c.id === conversationId ? { ...c, messages: [...c.messages, aiMessage] } : c
-      )
-    );
+    // 如果是新对话，先在UI上展示用户消息
+    if (conversationId && conversationId.startsWith('local-')) {
+        setConversations(prev =>
+            prev.map(c =>
+                c.id === conversationId ? { ...c, messages: [userMessage] } : c
+            )
+        );
+    } else if (conversationId) {
+        setConversations(prev =>
+            prev.map(c =>
+                c.id === conversationId ? { ...c, messages: [...c.messages, userMessage] } : c
+            )
+        );
+    }
 
-    // 3. 模拟流式响应
-    const streamText = `这是对您消息 "${content}" 的一个模拟流式回复。通过逐字输出，我们可以创造出更真实的对话体验。`;
-    let currentIndex = 0;
-    const interval = setInterval(() => {
-      if (currentIndex < streamText.length) {
-        setConversations(prev =>
-          prev.map(c => {
-            if (c.id === conversationId) {
-              const newMessages = c.messages.map(m =>
-                m.id === aiMessageId ? { ...m, content: streamText.substring(0, currentIndex + 1) } : m
-              );
-              return { ...c, messages: newMessages };
-            }
-            return c;
-          })
-        );
-        currentIndex++;
-      } else {
-        // 4. 流式输出结束，清除标记
-        clearInterval(interval);
-        setConversations(prev =>
-          prev.map(c => {
-            if (c.id === conversationId) {
-              const newMessages = c.messages.map(m =>
-                m.id === aiMessageId ? { ...m, isStreaming: false } : m
-              );
-              return { ...c, messages: newMessages };
-            }
-            return c;
-          })
-        );
+    try {
+      const res = await fetch('/api/chat/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+            message: content, 
+            // 如果是本地临时会话，不传ID，让后端创建新的
+            conversationId: conversationId && !conversationId.startsWith('local-') ? conversationId : null 
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('API request failed');
       }
-    }, 50); // 控制打字速度
-  };
 
+      const data = await res.json();
+      const { finalAnswer, conversationId: newConversationId } = data;
+
+      const aiMessage: Message = {
+        id: finalAnswer.id,
+        role: 'assistant',
+        content: finalAnswer.text,
+      };
+
+      // 更新会话状态
+      setConversations(prev => {
+        const conversationExists = prev.some(c => c.id === newConversationId);
+        if (conversationExists) {
+            // 将AI消息添加到现有对话中
+            return prev.map(c => 
+                c.id === newConversationId ? { ...c, messages: [...c.messages, aiMessage] } : c
+            );
+        } else {
+            // 这是一个新对话，用后端返回的ID替换本地临时ID
+            return prev.map(c => {
+                if(c.id === conversationId) { // 找到那个临时的对话
+                    return {
+                        id: newConversationId,
+                        title: content.substring(0, 20), // 使用消息内容作为标题
+                        messages: [userMessage, aiMessage],
+                    }
+                }
+                return c;
+            });
+        }
+      });
+      // 激活新的或更新的会话
+      setActiveConversationId(newConversationId);
+
+    } catch (error) {
+      console.error("Failed to send message:", error);
+      // 可以在这里添加错误状态处理
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const value = {
     conversations,
@@ -147,6 +150,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     deleteConversation,
     updateConversationTitle,
     sendMessage,
+    isLoading,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
