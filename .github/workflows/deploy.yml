@@ -20,51 +20,60 @@ jobs:
     script: |
       export CI=false
       export NEXT_TELEMETRY_DISABLED=1
-      set -euxo pipefail
-      # 下面是更新脚本内容...
-            # 写入/更新一键更新脚本
-            cat >/root/thinking-update.sh <<'EOS'
-            #!/usr/bin/env bash
-            set -euo pipefail
+     #!/usr/bin/env bash
+    set -euo pipefail
 
-            REPO_URL="https://github.com/lmenghao6-png/EKo-Chat.git"
-            APP_DIR="/opt/thinking"
-            PORT="3000"
+    REPO_URL="https://github.com/lmenghao6-png/EKo-Chat.git"
+    APP_DIR="/opt/thinking"
+    PORT="3000"
 
-            echo "[1/5] 准备环境"
-            apt update -y >/dev/null 2>&1 || true
-            command -v git >/dev/null 2>&1 || apt install -y git >/dev/null 2>&1
-            command -v node >/dev/null 2>&1 || apt install -y nodejs npm >/dev/null 2>&1
+echo "[1/5] 准备环境"
+apt update -y >/dev/null 2>&1 || true
+command -v git >/dev/null 2>&1 || apt install -y git >/dev/null 2>&1
+command -v node >/dev/null 2>&1 || apt install -y nodejs npm >/dev/null 2>&1
 
-            echo "[2/5] 获取最新代码"
-            mkdir -p "$APP_DIR"
-            if [ -d "$APP_DIR/.git" ]; then
-              cd "$APP_DIR"
-              git fetch --all --prune || true
-              git reset --hard origin/main || true
-            else
-              rm -rf "$APP_DIR"
-              cd /opt
-              git clone --depth=1 "$REPO_URL" thinking \
-                || git clone --depth=1 https://gitclone.com/github.com/lmenghao6-png/EKo-Chat.git thinking \
-                || git clone --depth=1 https://kgithub.com/lmenghao6-png/EKo-Chat.git thinking
-              cd "$APP_DIR"
-            fi
+echo "[2/5] 获取最新代码"
+mkdir -p "$APP_DIR"
+if [ -d "$APP_DIR/.git" ]; then
+  cd "$APP_DIR"
+  git fetch --all --prune || true
+  git reset --hard origin/main || true
+else
+  rm -rf "$APP_DIR"
+  cd /opt
+  git clone --depth=1 "$REPO_URL" thinking \
+    || git clone --depth=1 https://gitclone.com/github.com/lmenghao6-png/EKo-Chat.git thinking \
+    || git clone --depth=1 https://kgithub.com/lmenghao6-png/EKo-Chat.git thinking
+  cd "$APP_DIR"
+fi
 
-            echo "[3/5] 安装依赖并构建（使用国内 npm 源）"
-            npm config set registry https://registry.npmmirror.com
-            npm ci
-            npm run build
+echo "[pre] 停止服务"
+if systemctl is-active --quiet thinking 2>/dev/null; then
+  systemctl stop thinking || true
+else
+  pkill -f "next start" || true
+fi
 
-            echo "[4/5] 重启服务"
-            if systemctl is-enabled --quiet thinking 2>/dev/null; then
-              systemctl restart thinking
-            else
-              pkill -f "next start" || true
-              nohup npm start -- -H 0.0.0.0 -p "$PORT" > "$APP_DIR/app.out" 2>&1 &
-            fi
+echo "[3/5] 安装依赖并构建（使用国内 npm 源）"
+cd "$APP_DIR"
+npm config set registry https://registry.npmmirror.com
+rm -rf node_modules .next
+if ! npm ci; then
+  npm cache verify || true
+  rm -rf node_modules
+  npm i
+fi
+npm run build
 
-            echo "[5/5] 部署完成，版本: $(git rev-parse --short HEAD)"
+echo "[4/5] 重启服务"
+if systemctl is-enabled --quiet thinking 2>/div/null; then
+  systemctl restart thinking || systemctl start thinking
+else
+  pkill -f "next start" || true
+  nohup npm start -- -H 0.0.0.0 -p "$PORT" > "$APP_DIR/app.out" 2>&1 &
+fi
+
+echo "[5/5] 部署完成，版本: $(git rev-parse --short HEAD)"
             EOS
 
             chmod +x /root/thinking-update.sh
